@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="../xsl/unwebarchiver.xsl" type="text/xsl"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>WebMainResource</key>
+	<dict>
+		<key>WebResourceData</key>
+		<data>
+		PCFET0NUWVBFIGh0bWw+PGh0bWw+PGhlYWQ+CiAgICA8dGl0bGU+RXhhbXBs
+		ZSBEb21haW48L3RpdGxlPgoKICAgIDxtZXRhIGNoYXJzZXQ9InV0Zi04Ij4K
+		ICAgIDxtZXRhIGh0dHAtZXF1aXY9IkNvbnRlbnQtdHlwZSIgY29udGVudD0i
+		dGV4dC9odG1sOyBjaGFyc2V0PXV0Zi04Ij4KICAgIDxtZXRhIG5hbWU9InZp
+		ZXdwb3J0IiBjb250ZW50PSJ3aWR0aD1kZXZpY2Utd2lkdGgsIGluaXRpYWwt
+		c2NhbGU9MSI+CiAgICA8c3R5bGUgdHlwZT0idGV4dC9jc3MiPgogICAgYm9k
+		eSB7CiAgICAgICAgYmFja2dyb3VuZC1jb2xvcjogI2YwZjBmMjsKICAgICAg
+		ICBtYXJnaW46IDA7CiAgICAgICAgcGFkZGluZzogMDsKICAgICAgICBmb250
+		LWZhbWlseTogLWFwcGxlLXN5c3RlbSwgc3lzdGVtLXVpLCBCbGlua01hY1N5
+		c3RlbUZvbnQsICJTZWdvZSBVSSIsICJPcGVuIFNhbnMiLCAiSGVsdmV0aWNh
+		IE5ldWUiLCBIZWx2ZXRpY2EsIEFyaWFsLCBzYW5zLXNlcmlmOwogICAgICAg
+		IAogICAgfQogICAgZGl2IHsKICAgICAgICB3aWR0aDogNjAwcHg7CiAgICAg
+		ICAgbWFyZ2luOiA1ZW0gYXV0bzsKICAgICAgICBwYWRkaW5nOiAyZW07CiAg
+		ICAgICAgYmFja2dyb3VuZC1jb2xvcjogI2ZkZmRmZjsKICAgICAgICBib3Jk
+		ZXItcmFkaXVzOiAwLjVlbTsKICAgICAgICBib3gtc2hhZG93OiAycHggM3B4
+		IDdweCAycHggcmdiYSgwLDAsMCwwLjAyKTsKICAgIH0KICAgIGE6bGluaywg
+		YTp2aXNpdGVkIHsKICAgICAgICBjb2xvcjogIzM4NDg4ZjsKICAgICAgICB0
+		ZXh0LWRlY29yYXRpb246IG5vbmU7CiAgICB9CiAgICBAbWVkaWEgKG1heC13
+		aWR0aDogNzAwcHgpIHsKICAgICAgICBkaXYgewogICAgICAgICAgICBtYXJn
+		aW46IDAgYXV0bzsKICAgICAgICAgICAgd2lkdGg6IGF1dG87CiAgICAgICAg
+		fQogICAgfQogICAgPC9zdHlsZT4gICAgCjwvaGVhZD4KCjxib2R5Pgo8ZGl2
+		PgogICAgPGgxPkV4YW1wbGUgRG9tYWluPC9oMT4KICAgIDxwPlRoaXMgZG9t
+		YWluIGlzIGZvciB1c2UgaW4gaWxsdXN0cmF0aXZlIGV4YW1wbGVzIGluIGRv
+		Y3VtZW50cy4gWW91IG1heSB1c2UgdGhpcwogICAgZG9tYWluIGluIGxpdGVy
+		YXR1cmUgd2l0aG91dCBwcmlvciBjb29yZGluYXRpb24gb3IgYXNraW5nIGZv
+		ciBwZXJtaXNzaW9uLjwvcD4KICAgIDxwPjxhIGhyZWY9Imh0dHBzOi8vd3d3
+		LmlhbmEub3JnL2RvbWFpbnMvZXhhbXBsZSI+TW9yZSBpbmZvcm1hdGlvbi4u
+		LjwvYT48L3A+CjwvZGl2PgoKCjwvYm9keT48L2h0bWw+
+		</data>
+		<key>WebResourceFrameName</key>
+		<string></string>
+		<key>WebResourceMIMEType</key>
+		<string>text/html</string>
+		<key>WebResourceTextEncodingName</key>
+		<string>UTF-8</string>
+		<key>WebResourceURL</key>
+		<string>https://example.com/</string>
+	</dict>
+</dict>
+</plist>
