@@ -7,8 +7,7 @@ Unwebarchiver is a web extractor for `.webarchive` files. `.webarchive` files ar
 
 1. Read binary `.webarchive` file.
 2. Convert from binary to XML.
-3. Add XSLT to display.
-4. Convert entries from Base64 with `atob()`.
+3. Convert entries from Base64 with `atob()`.
 
 ## Ressources
 
