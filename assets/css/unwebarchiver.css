@@ -19,6 +19,7 @@ body {
 	flex-direction: column;
 	gap: 1rem;
 	padding: 2.5rem;
+	min-width: 23.4375rem;
 	max-width: 32.5rem;
 	margin: auto;
 }
@@ -97,6 +98,8 @@ form:is(:focus-within,:hover)::before {
 input[type="file"] {
 	font-family: Menlo, monospace;
 	font-size: 1rem;
+	max-width: calc(100vw - 5rem);
+	overflow: hidden;
 }
 
 ::file-selector-button {
