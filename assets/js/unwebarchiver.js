@@ -38,9 +38,21 @@ document.addEventListener('DOMContentLoaded', e => {
 				trailer.offset_table_start = parseInt(new DataView(trailerBuffer.slice(24, 32)).getBigUint64());
 				console.debug(trailer);
 
-				// Object table
-
 				// Offset table
+				const offsetTableBuffer = buffer.slice(trailer.offset_table_start, buffer.byteLength - 32);
+				let offsetTable = new Array();
+				for(i=0; i < (trailer.num_objects * trailer.offset_table_offset_size); i+=trailer.offset_table_offset_size) {
+					const offset = new DataView(offsetTableBuffer.slice(i, i + trailer.offset_table_offset_size));
+					offsetTable.push(offset.getUint16());
+				}
+				console.debug(offsetTable);
+
+				// Object table
+				for(i=0; i < offsetTable.length; i++) {
+					const obj = bufferToHex(buffer.slice(offsetTable[i], offsetTable[i] + 1));
+					console.debug('-', obj);
+				}
+
 
 			});
 			reader.readAsArrayBuffer(file);
@@ -50,3 +62,9 @@ document.addEventListener('DOMContentLoaded', e => {
 	});
 
 });
+
+function bufferToHex (buffer) {
+    return [...new Uint8Array (buffer)]
+        .map (b => b.toString (16).padStart (2, "0"))
+        .join ("");
+}
