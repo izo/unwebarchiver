@@ -124,10 +124,14 @@ document.addEventListener('DOMContentLoaded', e => {
 				}
 
 				function readDate(offset) {
+					// A Date, seconds since 2001-01-01T00:00:00Z
+					// via https://taksati.wordpress.com/2015/01/03/plists/
+					// This is midely infuriating. 
 					const dateBuffer = buffer.slice(offset+1, offset + 1 + 8);
-					const date = new DataView(dateBuffer).getFloat64();
-					console.log(date);
-					return `👀 0x33 — A date at ${offset}`;
+					const epoch = new Date("2001-01-01T00:00:00Z");
+					const elapsed = new DataView(dateBuffer).getFloat64() * 1000;
+					const date = new Date(epoch.valueOf() + elapsed.valueOf());
+					return date;
 				}
 
 
