@@ -41,20 +41,24 @@ document.addEventListener('DOMContentLoaded', e => {
 				// Offset table
 				const offsetTableBuffer = buffer.slice(trailer.offset_table_start, buffer.byteLength - 32);
 				let offsetTable = new Array();
-				for(i=0; i < (trailer.num_objects * trailer.offset_table_offset_size); i+=trailer.offset_table_offset_size) {
-					const offset = new DataView(offsetTableBuffer.slice(i, i + trailer.offset_table_offset_size));
+				for(i=0; i < trailer.num_objects; i++) {
+					const offset = new DataView(offsetTableBuffer.slice(i*trailer.offset_table_offset_size, (i + 1) * trailer.offset_table_offset_size));
 					switch(trailer.offset_table_offset_size) {
 						case 2:
 							offsetTable.push(offset.getUint16());
+							break;
 						case 3:
 							offsetTable.push(offset.getUint32());
+							break;
 						case 4:
 							offsetTable.push(offset.getBigUint64());
+							break;
 						default:
 							offsetTable.push(offset.getUint8());
+							break;
 					}
 				}
-				console.debug('offset table', offsetTable);
+				console.debug(`offsetTable`, offsetTable);
 
 				// Object table
 				offsetTable.forEach((item, i) => {
