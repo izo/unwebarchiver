@@ -125,15 +125,10 @@ unwebarchiver.parse = function(buffer) {
 						const lmbASCII = nextByte >> 4;
 						const rmbASCII = (nextByte << 4 & 0xFF) >> 4;
 						const bytesForSize = Math.pow(2, rmbASCII);
-						const sizeBuffer = buffer.slice(offset+2, offset+bytesForSize);
-						const sizeView = new DataView(sizeBuffer);
-						let size = 1;
-						// if(bytesForSize == 1) { // TODO : readInt
-						// 	size = sizeView.getUint8();
-						// }
-						// const nextByte = new DataView().getUint8();
-						console.debug('0x05 — ASCII String', size, sizeView.bytesLength);
-						return readASCII(offset+bytesForSize, size);
+						const sizeBuffer = buffer.slice(offset+2, offset+2+bytesForSize);
+						let size = new DataView(sizeBuffer).getUint8();
+						console.debug('0x05 — ASCII String', size, bytesForSize);
+						return readASCII(offset+1+bytesForSize, size);
 					default:
 						return readASCII(offset, rmb);
 				}
