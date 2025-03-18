@@ -119,7 +119,24 @@ unwebarchiver.parse = function(buffer) {
 				console.debug('0x04 — Data');
 				break;
 			case 0x05:
-				console.debug('0x05 — ASCII String');
+				switch(rmb) {
+					case 0x0F:
+						const nextByte = new DataView(buffer.slice(offset+1, offset+2)).getUint8();
+						const lmbASCII = nextByte >> 4;
+						const rmbASCII = (nextByte << 4 & 0xFF) >> 4;
+						const bytesForSize = Math.pow(2, rmbASCII);
+						const sizeBuffer = buffer.slice(offset+2, offset+bytesForSize);
+						const sizeView = new DataView(sizeBuffer);
+						let size = 1;
+						// if(bytesForSize == 1) { // TODO : readInt
+						// 	size = sizeView.getUint8();
+						// }
+						// const nextByte = new DataView().getUint8();
+						console.debug('0x05 — ASCII String', size, sizeView.bytesLength);
+						return readASCII(offset+bytesForSize, size);
+					default:
+						return readASCII(offset, rmb);
+				}
 				break;
 			case 0x06:
 				console.debug('0x06 — Unicode String');
@@ -183,6 +200,7 @@ unwebarchiver.parse = function(buffer) {
 		const charsBuffer = buffer.slice(offset+1, offset+1 + length);
 		const charsArray = new Uint8Array(charsBuffer);
 		const charsString = String.fromCharCode.apply(null, charsArray);
+		console.debug(`— readASCII: ${charsString}`);
 		return charsString;
 	}
 
