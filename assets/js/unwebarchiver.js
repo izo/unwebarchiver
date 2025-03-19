@@ -125,9 +125,8 @@ unwebarchiver.parse = function(buffer) {
 						const lmbASCII = nextByte >> 4;
 						const rmbASCII = (nextByte << 4 & 0xFF) >> 4;
 						const bytesForSize = Math.pow(2, rmbASCII);
-						const sizeBuffer = buffer.slice(offset+2, offset+2+bytesForSize);
-						let size = new DataView(sizeBuffer).getUint8();
-						console.debug('0x05 — ASCII String', size, bytesForSize);
+						let size = readInt(offset+2+bytesForSize, bytesForSize);
+						console.debug('0x05 — ASCII String', lmbASCII, rmbASCII, size, bytesForSize);
 						return readASCII(offset+1+bytesForSize, size);
 					default:
 						return readASCII(offset, rmb);
@@ -189,6 +188,16 @@ unwebarchiver.parse = function(buffer) {
 			default:
 				return '👀 TODO ' + marker;
 		}
+	}
+
+	function readInt(offset, length) {
+		const intBuffer = buffer.slice(offset, offset + length);
+		const intArray = new Uint8Array(intBuffer);
+		let sum = 0;
+		for(let i=0; i < length; i++) {
+			sum += intArray[i] << (8 * (length - i - 1));
+		}
+		return sum;
 	}
 
 	function readASCII(offset, length) {
