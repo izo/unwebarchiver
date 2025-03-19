@@ -67,6 +67,9 @@ unwebarchiver.parse = function(buffer) {
 	for(i=0; i < trailer.num_objects; i++) {
 		const offset = new DataView(offsetTableBuffer.slice(i*trailer.offset_table_offset_size, (i + 1) * trailer.offset_table_offset_size));
 		switch(trailer.offset_table_offset_size) {
+			case 1:
+				offsetTable.push(offset.getUint8());
+				break;
 			case 2:
 				offsetTable.push(offset.getUint16());
 				break;
@@ -75,9 +78,6 @@ unwebarchiver.parse = function(buffer) {
 				break;
 			case 4:
 				offsetTable.push(offset.getUint32());
-				break;
-			default:
-				offsetTable.push(offset.getUint8());
 				break;
 		}
 	}
@@ -116,20 +116,16 @@ unwebarchiver.parse = function(buffer) {
 				console.debug('0x03 — Date');
 				break;
 			case 0x04:
-				console.debug('0x04 — Data');
+				return readData(offset+1);
 				break;
 			case 0x05:
 				switch(rmb) {
 					case 0x0F:
-						const nextByte = new DataView(buffer.slice(offset+1, offset+2)).getUint8();
-						const lmbASCII = nextByte >> 4;
-						const rmbASCII = (nextByte << 4 & 0xFF) >> 4;
-						const bytesForSize = Math.pow(2, rmbASCII);
-						let size = readInt(offset+2+bytesForSize, bytesForSize);
-						console.debug('0x05 — ASCII String', lmbASCII, rmbASCII, size, bytesForSize);
-						return readASCII(offset+1+bytesForSize, size);
+						const sizeLength = readSizeLength(offset+1);
+						const size = readSize(offset+1);
+						return readASCII(offset+2+sizeLength, size);
 					default:
-						return readASCII(offset, rmb);
+						return readASCII(offset+1, rmb);
 				}
 				break;
 			case 0x06:
@@ -153,59 +149,95 @@ unwebarchiver.parse = function(buffer) {
 		}
 
 		switch(marker) {
-			case 0x08:
-				return false;
-			case 0x09:
-				return true;
-			case 0x23:
-				return '👀 0x23 — A real number of length 8 bytes';
-			case 0x33:
-				return readDate(offset);
-			case 0x62:
-				return '👀 0x62 — Unicode String';
-			case 0xA2:
-				return readArray(offset, 2);
-			case 0xD1:
-				return readDictionary(offset, 1);
-			case 0xD2:
-				return readDictionary(offset, 2);
-			case 0xD3:
-				return readDictionary(offset, 3);
-			case 0xD4:
-				return readDictionary(offset, 4);
-			case 0xD5:
-				return readDictionary(offset, 5);
-			case 0x56:
-				return readASCII(offset, 6);
-			case 0x57:
-				return readASCII(offset, 7);
-			case 0x5A:
-				return readASCII(offset, 10);
-			case 0x5B:
-				return readASCII(offset, 11);
-			case 0x5D:
-				return readASCII(offset, 13);
+			// case 0x08:
+			// 	return false;
+			// case 0x09:
+			// 	return true;
+			// case 0x23:
+			// 	return '👀 0x23 — A real number of length 8 bytes';
+			// case 0x33:
+			// 	return readDate(offset);
+			// case 0x62:
+			// 	return '👀 0x62 — Unicode String';
+			// case 0xA2:
+			// 	return readArray(offset, 2);
+			// case 0xD1:
+			// 	return readDictionary(offset, 1);
+			// case 0xD2:
+			// 	return readDictionary(offset, 2);
+			// case 0xD3:
+			// 	return readDictionary(offset, 3);
+			// case 0xD4:
+			// 	return readDictionary(offset, 4);
+			// case 0xD5:
+			// 	return readDictionary(offset, 5);
+			// case 0x56:
+			// 	return readASCII(offset, 6);
+			// case 0x57:
+			// 	return readASCII(offset, 7);
+			// case 0x5A:
+			// 	return readASCII(offset, 10);
+			// case 0x5B:
+			// 	return readASCII(offset, 11);
+			// case 0x5D:
+			// 	return readASCII(offset, 13);
 			default:
 				return '👀 TODO ' + marker;
 		}
 	}
 
-	function readInt(offset, length) {
-		const intBuffer = buffer.slice(offset, offset + length);
-		const intArray = new Uint8Array(intBuffer);
-		let sum = 0;
-		for(let i=0; i < length; i++) {
-			sum += intArray[i] << (8 * (length - i - 1));
+	// Read a size marker byte at offset
+	function readSize(offset) {
+		const bytesForSize = readSizeLength(offset);
+		const sizeDataView = new DataView(buffer.slice(offset+1, offset+1+bytesForSize));
+		let size = 0;
+		switch(bytesForSize) {
+			case 1:
+				size = sizeDataView.getUint8()
+				break;
+			case 2:
+				size = sizeDataView.getUint16()
+				break;
+			case 3:
+				size = sizeDataView.getUint32()
+				break;
+			case 4:
+				size = sizeDataView.getBigInt64()
+				break;
 		}
-		return sum;
+		return size;
 	}
 
+	function readSizeLength(offset) {
+		const nextByte = new DataView(buffer.slice(offset, offset+1)).getUint8();
+		const lmbASCII = nextByte >> 4;
+		const rmbASCII = (nextByte << 4 & 0xFF) >> 4;
+		return Math.pow(2, rmbASCII);
+	}
+
+	// function readInt(offset, length) {
+	// 	const intBuffer = buffer.slice(offset, offset + length);
+	// 	const intArray = new Uint8Array(intBuffer);
+	// 	let sum = 0;
+	// 	for(let i=0; i < length; i++) {
+	// 		sum += intArray[i] << (8 * (length - i - 1));
+	// 	}
+	// 	return sum;
+	// }
+
 	function readASCII(offset, length) {
-		const charsBuffer = buffer.slice(offset+1, offset+1 + length);
+		const charsBuffer = buffer.slice(offset, offset + length);
 		const charsArray = new Uint8Array(charsBuffer);
 		const charsString = String.fromCharCode.apply(null, charsArray);
 		console.debug(`— readASCII: ${charsString}`);
 		return charsString;
+	}
+
+	function readData(offset) {
+		const size = readSize(offset);
+		const sizeLength = readSizeLength(offset);
+		const data = readASCII(offset+sizeLength+1, size);
+		console.debug(`🥐 0x04 — Data - size: ${size}`, data);
 	}
 
 	function readDictionary(offset, pairs) {
