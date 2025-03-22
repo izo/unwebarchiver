@@ -123,66 +123,53 @@ unwebarchiver.parse = function(buffer) {
 					case 0x0F:
 						const sizeLength = readSizeLength(offset+1);
 						const size = readSize(offset+1);
-						return readASCII(offset+2+sizeLength, size);
+						return readString(offset+2+sizeLength, size, 'ascii');
 					default:
-						return readASCII(offset+1, rmb);
+						return readString(offset+1, rmb, 'ascii');
 				}
 				break;
 			case 0x06:
 				console.debug('0x06 — Unicode String');
+				switch(rmb) {
+					case 0x0F:
+						const sizeLength = readSizeLength(offset+1);
+						const size = readSize(offset+1);
+						return readString(offset+2+sizeLength, size, 'utf-16');
+					default:
+						return readString(offset+1, rmb, 'utf-16');
+				}
 				break;
 			case 0x08:
 				console.debug('0x08 — UUID');
 				break;
 			case 0x0A:
 				console.debug('0x0A — Array');
+				switch(rmb) {
+					case 0x0F:
+						const sizeLength = readSizeLength(offset+1);
+						const size = readSize(offset+1);
+						return readArray(offset+2+sizeLength, size);
+					default:
+						return readArray(offset+1, rmb);
+				}
 				break;
 			case 0x0C:
 				console.debug('0x0C — Set');
 				break;
 			case 0x0D:
 				console.debug('0x0D — Dict');
+				switch(rmb) {
+					case 0x0F:
+						const sizeLength = readSizeLength(offset+1);
+						const size = readSize(offset+1);
+						return readDictionary(offset+2+sizeLength, size);
+					default:
+						return readDictionary(offset+1, rmb);
+				}
 				break;
 			default:
 				console.debug('👀 UNKOWN!!!');
 				break;
-		}
-
-		switch(marker) {
-			// case 0x08:
-			// 	return false;
-			// case 0x09:
-			// 	return true;
-			// case 0x23:
-			// 	return '👀 0x23 — A real number of length 8 bytes';
-			// case 0x33:
-			// 	return readDate(offset);
-			// case 0x62:
-			// 	return '👀 0x62 — Unicode String';
-			// case 0xA2:
-			// 	return readArray(offset, 2);
-			// case 0xD1:
-			// 	return readDictionary(offset, 1);
-			// case 0xD2:
-			// 	return readDictionary(offset, 2);
-			// case 0xD3:
-			// 	return readDictionary(offset, 3);
-			// case 0xD4:
-			// 	return readDictionary(offset, 4);
-			// case 0xD5:
-			// 	return readDictionary(offset, 5);
-			// case 0x56:
-			// 	return readASCII(offset, 6);
-			// case 0x57:
-			// 	return readASCII(offset, 7);
-			// case 0x5A:
-			// 	return readASCII(offset, 10);
-			// case 0x5B:
-			// 	return readASCII(offset, 11);
-			// case 0x5D:
-			// 	return readASCII(offset, 13);
-			default:
-				return '👀 TODO ' + marker;
 		}
 	}
 
@@ -202,7 +189,7 @@ unwebarchiver.parse = function(buffer) {
 				size = sizeDataView.getUint32()
 				break;
 			case 4:
-				size = sizeDataView.getBigInt64()
+				size = sizeDataView.getUint32()
 				break;
 		}
 		return size;
@@ -225,24 +212,42 @@ unwebarchiver.parse = function(buffer) {
 	// 	return sum;
 	// }
 
-	function readASCII(offset, length) {
+	function readString(offset, length, encoding) {
+		encoding = encoding || 'ascii';
 		const charsBuffer = buffer.slice(offset, offset + length);
-		const charsArray = new Uint8Array(charsBuffer);
-		const charsString = String.fromCharCode.apply(null, charsArray);
-		console.debug(`— readASCII: ${charsString}`);
+		let charsArray;
+		if(encoding == 'utf-16') {
+			charsArray = new Uint16Array(charsBuffer);
+		} else {
+			charsArray = new Uint8Array(charsBuffer);
+		}
+		const decoder = new TextDecoder(encoding);
+		const charsString = decoder.decode(charsArray);
+		console.debug(`— readString: ${charsString}`);
 		return charsString;
 	}
+
+	// function readASCII(offset, length) {
+	// 	const charsBuffer = buffer.slice(offset, offset + length);
+	// 	const charsArray = new Uint8Array(charsBuffer);
+	// 	const decoder = new TextDecoder('ascii');
+	// 	const charsString = decoder.decode(charsArray);
+	// 	console.debug(`— readASCII: ${charsString}`);
+	// 	return charsString;
+	// }
 
 	function readData(offset) {
 		const size = readSize(offset);
 		const sizeLength = readSizeLength(offset);
-		const data = readASCII(offset+sizeLength+1, size);
-		console.debug(`🥐 0x04 — Data - size: ${size}`, data);
+		const dataBuffer = buffer.slice(offset+sizeLength+1, offset+sizeLength+1+size);
+		const dataArray = new Uint8Array(dataBuffer);
+		return dataArray;
+		console.debug(`- readData: ${size}`, new TextDecoder().decode(dataArray).replace(/\r?\n?/g, '').substr(0, 32) + '…');
 	}
 
 	function readDictionary(offset, pairs) {
 		let objArray = new Array();
-		const keysBuffer = buffer.slice(offset+1, offset+1 + pairs);
+		const keysBuffer = buffer.slice(offset, offset + pairs);
 		const keysArray = new Uint8Array(keysBuffer);
 		keysArray.forEach((item, i) => {
 			const offset = offsetTable[keysArray[i]];
@@ -250,7 +255,7 @@ unwebarchiver.parse = function(buffer) {
 			const obj = readObject(marker, offset);
 			objArray.push({ key: obj, value: null });
 		});
-		const valuesBuffer = buffer.slice(offset+1+pairs, offset+1 + (pairs*2));
+		const valuesBuffer = buffer.slice(offset+pairs, offset + (pairs*2));
 		const valuesArray = new Uint8Array(valuesBuffer);
 		valuesArray.forEach((item, i) => {
 			const offset = offsetTable[valuesArray[i]];
@@ -258,20 +263,20 @@ unwebarchiver.parse = function(buffer) {
 			const obj = readObject(marker, offset);
 			objArray[i].value = obj;
 		});
-		// console.debug(`readDictionary`, objArray);
+		console.debug(`- readDictionary`, objArray);
 		return objArray;
 	}
 
 	function readArray(offset, length) {
-		// 0xA2 — Array of two elements
 		let objArray = new Array();
-		const keysBuffer = buffer.slice(offset+1, offset+1 + length);
+		const keysBuffer = buffer.slice(offset, offset + length);
 		const keysArray = new Uint8Array(keysBuffer);
 		keysArray.forEach((item, i) => {
 			const offset = offsetTable[keysArray[i]];
 			const marker = new DataView(buffer.slice(offset, offset + 1)).getUint8();
 			objArray.push(readObject(marker, offset));
 		});
+		console.debug(`- readArray`, objArray);
 		return objArray;
 	}
 
