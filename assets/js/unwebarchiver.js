@@ -1,7 +1,7 @@
 const unwebarchiver = {};
 
 unwebarchiver.init = function() {
-	unwebarchiver.input = document.getElementById('file-selector');
+	unwebarchiver.input = document.getElementById('unwebarchiver-input-file');
 
 	if(!unwebarchiver.input) {
 		return;
@@ -20,201 +20,165 @@ unwebarchiver.readFile = function() {
 	const fileList = unwebarchiver.input.files;
 
 	for (const file of fileList) {
-		// Not supported in Safari for iOS.
-		const name = file.name ? file.name : 'NOT SUPPORTED';
-		// Not supported in Firefox for Android or Opera for Android.
-		const type = file.type ? file.type : 'NOT SUPPORTED';
-		// Unknown cross-browser support.
-		const size = file.size ? file.size : 'NOT SUPPORTED';
-
-		if (file.type && !file.type.startsWith('application/x-webarchive')) {
-			console.log('File is not a webarchive.', file.type, file);
-			return;
-		}
-
-		const reader = new FileReader();
-		reader.addEventListener('load', (event) => {
-			const buffer = event.target.result;
-			unwebarchiver.parse(buffer);
-		});
-		reader.readAsArrayBuffer(file);
-
+		unwebarchiver.webarchive = new WebArchive(file);
 	}
 };
 
-unwebarchiver.parse = function(buffer) {
-	// Header
-	const headerBuffer = buffer.slice(0, 8);
-	const headerArray = new Uint8Array(headerBuffer);
-	const headerString = String.fromCharCode.apply(null, headerArray);
-	console.debug(headerString, buffer.byteLength);
+document.addEventListener('DOMContentLoaded', e => {
+	unwebarchiver.init();
+});
 
-	// Trailer
-	const trailerBuffer = buffer.slice(buffer.byteLength - 32, buffer.byteLength);
-	const trailerArray = new Uint8Array(trailerBuffer);
-	let trailer = {};
-	trailer.sort_version = trailerArray[5];
-	trailer.offset_table_offset_size = trailerArray[6]; // Valid values are 1, 2, 3, or 4.
-	trailer.object_ref_size = trailerArray[7]; // Valid values are 1 or 2.
-	trailer.num_objects = parseInt(new DataView(trailerBuffer.slice(8, 16)).getBigUint64());
-	trailer.top_object_offset = parseInt(new DataView(trailerBuffer.slice(16, 24)).getBigUint64());
-	trailer.offset_table_start = parseInt(new DataView(trailerBuffer.slice(24, 32)).getBigUint64());
-	console.debug('trailer', trailer);
-
-	// Offset table
-	const offsetTableBuffer = buffer.slice(trailer.offset_table_start, buffer.byteLength - 32);
-	let offsetTable = new Array();
-	for(i=0; i < trailer.num_objects; i++) {
-		const offset = new DataView(offsetTableBuffer.slice(i*trailer.offset_table_offset_size, (i + 1) * trailer.offset_table_offset_size));
-		switch(trailer.offset_table_offset_size) {
-			case 1:
-				offsetTable.push(offset.getUint8());
-				break;
-			case 2:
-				offsetTable.push(offset.getUint16());
-				break;
-			case 3:
-				offsetTable.push(offset.getUint24()); // TODO
-				break;
-			case 4:
-				offsetTable.push(offset.getUint32());
-				break;
+class WebArchive {
+	constructor(file) {
+		if (file.type && !file.type.startsWith('application/x-webarchive')) {
+			console.error('File is not a webarchive.', file.type, file);
+			return;
 		}
+		this.file = file;
+		this.read();
+		return this;
 	}
-
-	// Object table
-	offsetTable.forEach((item, i) => {
-		const offset = offsetTable[i];
-		const marker = new DataView(buffer.slice(offset, offset + 1)).getUint8();
-		readObject(marker, offset);
-	});
-
-	function readObject(marker, offset) {
+	read() {
+		const reader = new FileReader();
+		reader.addEventListener('load', (event) => {
+			this.buffer = event.target.result;
+			this.parse();
+		});
+		reader.readAsArrayBuffer(this.file);
+	}
+	parse() {
+		this.header = this.#parseHeader();
+		this.trailer = this.#parseTrailer();
+		this.offsetTable = this.#parseOffsetTable();
+		this.objectTable = this.#parseObjectTable();
+		console.debug(this.header, this.trailer, this.offsetTable, this.objectTable);
+	}
+	#parseHeader() {
+		// The header is a magic number ("bplist") followed
+		// by a file format version (currently "0?").
+		// We dont’t need these so we don’t split them. 
+		const buffer = this.buffer.slice(0, 8);
+		const array = new Uint8Array(buffer);
+		const decoder = new TextDecoder('ascii');
+		return decoder.decode(array);
+	}
+	#parseTrailer() {
+		const buffer = this.buffer.slice(this.buffer.byteLength - 32, this.buffer.byteLength);
+		const array = new Uint8Array(buffer);
+		let trailer = {};
+		trailer.sort_version = array[5];
+		// 	Byte size of offset ints in offset table
+		trailer.offsetTableOffsetSize = array[6]; // Valid values are 1, 2, 3, or 4.
+		// 	Byte size of object refs in arrays and dicts
+		trailer.objectRefsSize = array[7]; // Valid values are 1 or 2.
+		// 	Number of offsets in offset table (also is number of objects)
+		trailer.objectsNumber =  buffer.readUIntBE(8, 8);
+		// 	Element # in offset table which is top level object
+		trailer.topLevelObjectOffset = buffer.readUIntBE(16, 8);
+		// 	Offset table offset
+		trailer.offsetTableOffset = buffer.readUIntBE(24, 8);
+		return trailer;
+	}
+	#parseOffsetTable() {
+		if(!this.trailer) { return; }
+		const buffer = this.buffer.slice(this.trailer.offsetTableOffset, this.buffer.byteLength - 32);
+		let offsetTable = new Array();
+		for(let i=0; i < this.trailer.objectsNumber; i++) {
+			const offset = i * this.trailer.offsetTableOffsetSize;
+			const value = buffer.readUIntBE(offset, this.trailer.offsetTableOffsetSize);
+			offsetTable.push(value);
+		}
+		return offsetTable;
+	}
+	#parseObjectTable() {
+		const offset = this.offsetTable[this.trailer.topLevelObjectOffset];
+		const marker = this.buffer.readUIntBE(offset, 1);
+		let objectTable = new Array();
+		objectTable.push(this.#readObject(marker, offset));
+		return objectTable;
+	}
+	#readObject(marker, offset) {
 		const lmb = marker >> 4; // Left most bits
 		const rmb = (marker << 4 & 0xFF) >> 4; // Right most bits
-		// console.debug(`marker: ${marker.toString(2).padStart(8, "0")}; lbm: ${lmb.toString(2).padStart(4, "0")}; rmb:${rmb.toString(2).padStart(4, "0")}`);
-
 		switch(lmb) {
+			// 0x00 - Boolean
 			case 0x00:
-				console.debug('0x00 - Bool');
 				switch(rmb) {
 					case 0x08:
 						return false;
 					case 0x09:
 						return true;
-					default:
-						return null;
 				}
-				break;
+			// 0x03 — Date
+			case 0x03:
+				return this.#readDate(offset+1);
+			// 0x04 - Binary Data
+			case 0x04:
+				return this.#readData(offset+1);
+			// 0x05 - ASCII String
+			case 0x05:
+				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readASCIIString.bind(this));
+			// 0x06 - Unicode String
+			case 0x06:
+				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readUnicodeString.bind(this));
+			// 0x0A — Array
+			case 0x0A:
+				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readArray.bind(this));
+			// 0x0D — Dictionary
+			case 0x0D:
+				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readDictionary.bind(this));
 			case 0x01:
 				console.debug('0x01 - Int');
 				break;
 			case 0x02:
 				console.debug('0x02 - Real');
 				break;
-			case 0x03:
-				console.debug('0x03 — Date');
-				break;
-			case 0x04:
-				return readData(offset+1);
-				break;
-			case 0x05:
-				switch(rmb) {
-					case 0x0F:
-						const sizeLength = readSizeLength(offset+1);
-						const size = readSize(offset+1);
-						return readString(offset+2+sizeLength, size, 'ascii');
-					default:
-						return readString(offset+1, rmb, 'ascii');
-				}
-				break;
-			case 0x06:
-				console.debug('0x06 — Unicode String');
-				switch(rmb) {
-					case 0x0F:
-						const sizeLength = readSizeLength(offset+1);
-						const size = readSize(offset+1);
-						return readString(offset+2+sizeLength, size, 'utf-16');
-					default:
-						return readString(offset+1, rmb, 'utf-16');
-				}
-				break;
 			case 0x08:
 				console.debug('0x08 — UUID');
-				break;
-			case 0x0A:
-				console.debug('0x0A — Array');
-				switch(rmb) {
-					case 0x0F:
-						const sizeLength = readSizeLength(offset+1);
-						const size = readSize(offset+1);
-						return readArray(offset+2+sizeLength, size);
-					default:
-						return readArray(offset+1, rmb);
-				}
 				break;
 			case 0x0C:
 				console.debug('0x0C — Set');
 				break;
-			case 0x0D:
-				console.debug('0x0D — Dict');
-				switch(rmb) {
-					case 0x0F:
-						const sizeLength = readSizeLength(offset+1);
-						const size = readSize(offset+1);
-						return readDictionary(offset+2+sizeLength, size);
-					default:
-						return readDictionary(offset+1, rmb);
-				}
-				break;
 			default:
-				console.debug('👀 UNKOWN!!!');
-				break;
+				return null;
 		}
 	}
-
-	// Read a size marker byte at offset
-	function readSize(offset) {
-		const bytesForSize = readSizeLength(offset);
-		const sizeDataView = new DataView(buffer.slice(offset+1, offset+1+bytesForSize));
-		let size = 0;
-		switch(bytesForSize) {
-			case 1:
-				size = sizeDataView.getUint8()
-				break;
-			case 2:
-				size = sizeDataView.getUint16()
-				break;
-			case 3:
-				size = sizeDataView.getUint32()
-				break;
-			case 4:
-				size = sizeDataView.getUint32()
-				break;
+	#readObjectSizeLength(offset) {
+		const nextByte = this.buffer.readUIntBE(offset, 1);
+		const lmb = nextByte >> 4; // Left most bits
+		const rmb = (nextByte << 4 & 0xFF) >> 4; // Right most bits
+		return Math.pow(2, rmb);
+	}
+	#readObjectWithUnknownSize(offset, size, callback) {
+		if(size == 0x0F) {
+			const sizeLength = this.#readObjectSizeLength(offset);
+			size = this.buffer.readUIntBE(offset+1, sizeLength);
+			offset += 1 + sizeLength;
 		}
-		return size;
+		return callback(offset, size);
 	}
-
-	function readSizeLength(offset) {
-		const nextByte = new DataView(buffer.slice(offset, offset+1)).getUint8();
-		const lmbASCII = nextByte >> 4;
-		const rmbASCII = (nextByte << 4 & 0xFF) >> 4;
-		return Math.pow(2, rmbASCII);
+	#readDictionary(offset, pairs) {
+		let objArray = new Array();
+		const keysBuffer = this.buffer.slice(offset, offset + pairs);
+		const keysArray = new Uint8Array(keysBuffer);
+		keysArray.forEach((item, i) => {
+			const offset = this.offsetTable[keysArray[i]];
+			const marker = new DataView(this.buffer.slice(offset, offset + 1)).getUint8();
+			const obj = this.#readObject(marker, offset);
+			objArray.push({ key: obj, value: null });
+		});
+		const valuesBuffer = this.buffer.slice(offset+pairs, offset + (pairs*2));
+		const valuesArray = new Uint8Array(valuesBuffer);
+		valuesArray.forEach((item, i) => {
+			const offset = this.offsetTable[valuesArray[i]];
+			const marker = new DataView(this.buffer.slice(offset, offset + 1)).getUint8();
+			const obj = this.#readObject(marker, offset);
+			objArray[i].value = obj;
+		});
+		return objArray;
 	}
-
-	// function readInt(offset, length) {
-	// 	const intBuffer = buffer.slice(offset, offset + length);
-	// 	const intArray = new Uint8Array(intBuffer);
-	// 	let sum = 0;
-	// 	for(let i=0; i < length; i++) {
-	// 		sum += intArray[i] << (8 * (length - i - 1));
-	// 	}
-	// 	return sum;
-	// }
-
-	function readString(offset, length, encoding) {
-		encoding = encoding || 'ascii';
-		const charsBuffer = buffer.slice(offset, offset + length);
+	#readString(offset, size, encoding) {
+		const charsBuffer = this.buffer.slice(offset, offset + size);
 		let charsArray;
 		if(encoding == 'utf-16') {
 			charsArray = new Uint16Array(charsBuffer);
@@ -222,76 +186,47 @@ unwebarchiver.parse = function(buffer) {
 			charsArray = new Uint8Array(charsBuffer);
 		}
 		const decoder = new TextDecoder(encoding);
-		const charsString = decoder.decode(charsArray);
-		console.debug(`— readString: ${charsString}`);
-		return charsString;
+		return decoder.decode(charsArray);
 	}
-
-	// function readASCII(offset, length) {
-	// 	const charsBuffer = buffer.slice(offset, offset + length);
-	// 	const charsArray = new Uint8Array(charsBuffer);
-	// 	const decoder = new TextDecoder('ascii');
-	// 	const charsString = decoder.decode(charsArray);
-	// 	console.debug(`— readASCII: ${charsString}`);
-	// 	return charsString;
-	// }
-
-	function readData(offset) {
-		const size = readSize(offset);
-		const sizeLength = readSizeLength(offset);
-		const dataBuffer = buffer.slice(offset+sizeLength+1, offset+sizeLength+1+size);
-		const dataArray = new Uint8Array(dataBuffer);
-		return dataArray;
-		console.debug(`- readData: ${size}`, new TextDecoder().decode(dataArray).replace(/\r?\n?/g, '').substr(0, 32) + '…');
+	#readASCIIString(offset, size) {
+		return this.#readString(offset, size, 'ascii');
 	}
-
-	function readDictionary(offset, pairs) {
-		let objArray = new Array();
-		const keysBuffer = buffer.slice(offset, offset + pairs);
-		const keysArray = new Uint8Array(keysBuffer);
-		keysArray.forEach((item, i) => {
-			const offset = offsetTable[keysArray[i]];
-			const marker = new DataView(buffer.slice(offset, offset + 1)).getUint8();
-			const obj = readObject(marker, offset);
-			objArray.push({ key: obj, value: null });
-		});
-		const valuesBuffer = buffer.slice(offset+pairs, offset + (pairs*2));
-		const valuesArray = new Uint8Array(valuesBuffer);
-		valuesArray.forEach((item, i) => {
-			const offset = offsetTable[valuesArray[i]];
-			const marker = new DataView(buffer.slice(offset, offset + 1)).getUint8();
-			const obj = readObject(marker, offset);
-			objArray[i].value = obj;
-		});
-		console.debug(`- readDictionary`, objArray);
-		return objArray;
+	#readUnicodeString(offset, size) {
+		return this.#readString(offset, size, 'utf-16');
 	}
-
-	function readArray(offset, length) {
-		let objArray = new Array();
-		const keysBuffer = buffer.slice(offset, offset + length);
-		const keysArray = new Uint8Array(keysBuffer);
-		keysArray.forEach((item, i) => {
-			const offset = offsetTable[keysArray[i]];
-			const marker = new DataView(buffer.slice(offset, offset + 1)).getUint8();
-			objArray.push(readObject(marker, offset));
-		});
-		console.debug(`- readArray`, objArray);
-		return objArray;
-	}
-
-	function readDate(offset) {
-		// A Date, seconds since 2001-01-01T00:00:00Z
-		// via https://taksati.wordpress.com/2015/01/03/plists/
-		// This is midely infuriating. 
-		const dateBuffer = buffer.slice(offset+1, offset + 1 + 8);
+	#readDate(offset) {
+		// A Date in seconds since 2001-01-01T00:00:00Z
+		const dateBuffer = this.buffer.slice(offset, offset + 8);
 		const epoch = new Date("2001-01-01T00:00:00Z");
 		const elapsed = new DataView(dateBuffer).getFloat64() * 1000;
-		const date = new Date(epoch.valueOf() + elapsed.valueOf());
-		return date;
+		return new Date(epoch.valueOf() + elapsed.valueOf());
 	}
-};
+	#readArray(offset, size) {
+		let objectsArray = new Array();
+		const keysBuffer = this.buffer.slice(offset, offset + size);
+		const keysArray = new Uint8Array(keysBuffer);
+		keysArray.forEach((item, i) => {
+			const offset = this.offsetTable[keysArray[i]];
+			const marker = new DataView(this.buffer.slice(offset, offset + 1)).getUint8();
+			objectsArray.push(this.#readObject(marker, offset));
+		});
+		return objectsArray;
+	}
+	#readData(offset) {
+		const sizeLength = this.#readObjectSizeLength(offset);
+		const size = this.buffer.readUIntBE(offset+1, sizeLength);
+		const dataBuffer = this.buffer.slice(offset+sizeLength+1, offset+sizeLength+1+size);
+		return new Blob(new Array(dataBuffer));
+	}
+}
 
-document.addEventListener('DOMContentLoaded', e => {
-	unwebarchiver.init();
-});
+// Reads `byteLength` number of bytes from ArrayBuffer at the specified `offset`.
+ArrayBuffer.prototype.readUIntBE = function(offset, byteLength) {
+	const intBuffer = this.slice(offset, offset + byteLength);
+	const intArray = new Uint8Array(intBuffer);
+	let sum = 0;
+	for(let i=0; i < byteLength; i++) {
+		sum += intArray[i] << (8 * (byteLength - i - 1));
+	}
+	return sum;
+}
