@@ -24,6 +24,12 @@ body {
 	margin: auto;
 }
 
+header, main, footer {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
 h1 {
 	display: flex;
 	align-items: center;
@@ -96,10 +102,14 @@ form:is(:focus-within,:hover)::before {
 }
 
 input[type="file"] {
-	font-family: Menlo, monospace;
+	font-family: inherit;
 	font-size: 1rem;
 	max-width: calc(100vw - 5rem);
 	overflow: hidden;
+}
+
+input[type="file"]:valid {
+	font-family: Menlo, monospace;
 }
 
 ::file-selector-button {
@@ -132,9 +142,6 @@ code {
 }
 
 footer {
-	display: flex;
-	flex-direction: column;
-	gap: 0.25rem;
 	margin-top: 2.5rem;
 	text-align: center;
 	color: light-dark(rgba(0, 0, 0, 0.56), rgba(255, 255, 255, 0.64));
