@@ -1,4 +1,5 @@
 const unwebarchiver = {};
+let x = 0;
 
 unwebarchiver.init = function() {
 	unwebarchiver.input = document.getElementById('unwebarchiver-input-file');
@@ -43,6 +44,9 @@ class WebArchive {
 		reader.addEventListener('load', (event) => {
 			this.buffer = event.target.result;
 			this.parse();
+
+			document.querySelector('iframe').setAttribute('src', this.getURL());
+			// console.log(this.getURL());
 		});
 		reader.readAsArrayBuffer(this.file);
 	}
@@ -51,7 +55,11 @@ class WebArchive {
 		this.trailer = this.#parseTrailer();
 		this.offsetTable = this.#parseOffsetTable();
 		this.objectTable = this.#parseObjectTable();
-		console.debug(this.header, this.trailer, this.offsetTable, this.objectTable);
+	}
+	getURL() {
+		if(!this.objectTable) { return "#"; }
+		const blob = new Blob(new Array(this.objectTable.WebMainResource.WebResourceData), { type: this.objectTable.WebMainResource.WebResourceMIMEType })
+		return URL.createObjectURL(blob);
 	}
 	#parseHeader() {
 		// The header is a magic number ("bplist") followed
@@ -93,11 +101,17 @@ class WebArchive {
 	#parseObjectTable() {
 		const offset = this.offsetTable[this.trailer.topLevelObjectOffset];
 		const marker = this.buffer.readUIntBE(offset, 1);
-		let objectTable = new Array();
-		objectTable.push(this.#readObject(marker, offset));
+		let objectTable = null;
+		try {
+			x = 0;
+			objectTable = this.#readObject(marker, offset);
+		} catch(e) {
+			console.error(`InternalError: too much recursion`, x);
+		}
 		return objectTable;
 	}
 	#readObject(marker, offset) {
+		x++;
 		const lmb = marker >> 4; // Left most bits
 		const rmb = (marker << 4 & 0xFF) >> 4; // Right most bits
 		switch(lmb) {
@@ -158,24 +172,30 @@ class WebArchive {
 		return callback(offset, size);
 	}
 	#readDictionary(offset, pairs) {
-		let objArray = new Array();
+		let dictArray = new Array();
 		const keysBuffer = this.buffer.slice(offset, offset + pairs);
 		const keysArray = new Uint8Array(keysBuffer);
 		keysArray.forEach((item, i) => {
 			const offset = this.offsetTable[keysArray[i]];
-			const marker = new DataView(this.buffer.slice(offset, offset + 1)).getUint8();
+			const marker = this.buffer.readUIntBE(offset, 1);
 			const obj = this.#readObject(marker, offset);
-			objArray.push({ key: obj, value: null });
+			dictArray.push({ key: obj, value: null });
 		});
 		const valuesBuffer = this.buffer.slice(offset+pairs, offset + (pairs*2));
 		const valuesArray = new Uint8Array(valuesBuffer);
 		valuesArray.forEach((item, i) => {
 			const offset = this.offsetTable[valuesArray[i]];
-			const marker = new DataView(this.buffer.slice(offset, offset + 1)).getUint8();
+			const marker = this.buffer.readUIntBE(offset, 1);
 			const obj = this.#readObject(marker, offset);
-			objArray[i].value = obj;
+			dictArray[i].value = obj;
 		});
-		return objArray;
+		let dictObject = {};
+		dictArray.forEach((item, i) => {
+			const key = dictArray[i].key;
+			const value = dictArray[i].value;
+			dictObject[key] = value;
+		});
+		return dictObject;
 	}
 	#readString(offset, size, encoding) {
 		const charsBuffer = this.buffer.slice(offset, offset + size);
@@ -207,7 +227,7 @@ class WebArchive {
 		const keysArray = new Uint8Array(keysBuffer);
 		keysArray.forEach((item, i) => {
 			const offset = this.offsetTable[keysArray[i]];
-			const marker = new DataView(this.buffer.slice(offset, offset + 1)).getUint8();
+			const marker = this.buffer.readUIntBE(offset, 1);
 			objectsArray.push(this.#readObject(marker, offset));
 		});
 		return objectsArray;
@@ -215,8 +235,7 @@ class WebArchive {
 	#readData(offset) {
 		const sizeLength = this.#readObjectSizeLength(offset);
 		const size = this.buffer.readUIntBE(offset+1, sizeLength);
-		const dataBuffer = this.buffer.slice(offset+sizeLength+1, offset+sizeLength+1+size);
-		return new Blob(new Array(dataBuffer));
+		return this.buffer.slice(offset+sizeLength+1, offset+sizeLength+1+size);
 	}
 }
 

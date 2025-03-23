@@ -141,6 +141,19 @@ code {
 	font-family: Menlo, monospace;
 }
 
+iframe {
+	border: none;
+	margin-inline: -2rem;
+	width: calc(100% + 4rem);
+	height: auto;
+	aspect-ratio: 2 / 1;
+	background-color: transparent;
+	border-radius: 0.5rem;
+	border-width: 0.0625rem;
+	border-style: solid;
+	border-color: light-dark(rgba(0,0,0,.15), rgba(255, 255, 255, 0.1));
+}
+
 footer {
 	margin-top: 2.5rem;
 	text-align: center;
