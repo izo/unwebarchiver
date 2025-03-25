@@ -44,8 +44,7 @@ class WebArchive {
 		reader.addEventListener('load', (event) => {
 			this.buffer = event.target.result;
 			this.parse();
-
-			document.querySelector('iframe').setAttribute('src', this.getURL());
+			// document.querySelector('iframe').setAttribute('src', this.getURL());
 			// console.log(this.getURL());
 		});
 		reader.readAsArrayBuffer(this.file);
@@ -54,6 +53,8 @@ class WebArchive {
 		this.header = this.#parseHeader();
 		this.trailer = this.#parseTrailer();
 		this.offsetTable = this.#parseOffsetTable();
+		console.debug(this.header, this.trailer, this.offsetTable);
+		this.#cacheObjectTable();
 		this.objectTable = this.#parseObjectTable();
 	}
 	getURL() {
@@ -98,6 +99,32 @@ class WebArchive {
 		}
 		return offsetTable;
 	}
+	#cacheObjectTable() {
+		if(!this.offsetTable) { return; }
+		this._cachedObjectTable = new Array();
+		this._uncachedObjectTable = new Array();
+		console.debug('cacheObjectTable::before', this.offsetTable.length);
+		for(let i=0; i < this.offsetTable.length; i++) {
+			const offset = this.offsetTable[i];
+			const marker = this.buffer.readUIntBE(offset, 1);
+			const lmb = marker >> 4; // Left most bits
+			// We cache all objects except 0x0A (Array) and 0x0D (Dictionary)
+			if(lmb != 0x0A && lmb != 0x0D) {
+				// this._cachedObjectTable[offset] = this.#readObject(marker, offset);
+				this._cachedObjectTable.push(this.#readObject(marker, offset));
+			} else {
+				this._uncachedObjectTable.push(offset);
+				// this._cachedObjectTable[offset] = null;
+			}
+		}
+		for(let i=0; i < this._uncachedObjectTable.length; i++) {
+			const offset = this._uncachedObjectTable[i];
+			const marker = this.buffer.readUIntBE(offset, 1);
+			// const marker = this.buffer.readUIntBE(offset, 1);
+		}
+		console.debug('cacheObjectTable::after', this._cachedObjectTable.length, this._cachedObjectTable);
+		console.debug('uncacheObjectTable', this._uncachedObjectTable.length, this._uncachedObjectTable);
+	}
 	#parseObjectTable() {
 		const offset = this.offsetTable[this.trailer.topLevelObjectOffset];
 		const marker = this.buffer.readUIntBE(offset, 1);
@@ -111,6 +138,12 @@ class WebArchive {
 		return objectTable;
 	}
 	#readObject(marker, offset) {
+		// if(x > 1000)
+		// 	return null;
+		// if(this._cachedObjectTable && this._cachedObjectTable[offset]) {
+		// 	console.debug('readObject', 'fromCache', offset);
+		// 	return this._cachedObjectTable[offset];
+		// }
 		x++;
 		const lmb = marker >> 4; // Left most bits
 		const rmb = (marker << 4 & 0xFF) >> 4; // Right most bits
