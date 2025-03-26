@@ -1,27 +1,59 @@
-const unwebarchiver = {};
-let x = 0;
+const unwebarchiver = {
+	init: function() {
+		unwebarchiver.input = document.getElementById('unwebarchiver-input-file');
 
-unwebarchiver.init = function() {
-	unwebarchiver.input = document.getElementById('unwebarchiver-input-file');
+		if(!unwebarchiver.input) {
+			return;
+		}
 
-	if(!unwebarchiver.input) {
-		return;
-	}
+		if(unwebarchiver.input.files.length > 0) {
+			unwebarchiver.readWebArchive();
+		}
 
-	if(unwebarchiver.input.files.length > 0) {
-		unwebarchiver.readFile();
-	}
+		unwebarchiver.input.addEventListener('change', (event) => {
+			unwebarchiver.clearResults();
+			unwebarchiver.readWebArchive();
+		});
+	},
+	readWebArchive: function() {
+		const fileList = unwebarchiver.input.files;
 
-	unwebarchiver.input.addEventListener('change', (event) => {
-		unwebarchiver.readFile();
-	});
-};
-
-unwebarchiver.readFile = function() {
-	const fileList = unwebarchiver.input.files;
-
-	for (const file of fileList) {
-		unwebarchiver.webarchive = new WebArchive(file);
+		for (const file of fileList) {
+			let webArchiveFile = new WebArchive(file);
+			webArchiveFile.read().then(() => {
+				let webArchiveJSON = webArchiveFile.getJSON();
+				unwebarchiver.addResults(webArchiveJSON);
+				console.log(webArchiveJSON, unwebarchiver.getBlobURL(webArchiveJSON.WebMainResource.WebResourceData, webArchiveJSON.WebMainResource.WebResourceMIMEType));
+			});
+		}
+	},
+	clearResults: function() {
+		const ul = document.querySelector('.result-files');
+		ul.replaceChildren();
+		ul.parentNode.setAttribute('hidden', 'hidden');
+	},
+	addResults: function(webArchiveJSON) {
+		const ul = document.querySelector('.result-files');
+		ul.replaceChildren();
+		ul.parentNode.removeAttribute('hidden');
+		unwebarchiver.addSingleResult(webArchiveJSON.WebMainResource);
+		for(let i=0; i < webArchiveJSON.WebSubresources.length; i++) {
+			const webResourceObject = webArchiveJSON.WebSubresources[i];
+			unwebarchiver.addSingleResult(webResourceObject);
+		}
+	},
+	addSingleResult: function(webResourceObject) {
+		const ul = document.querySelector('.result-files');
+		let li = document.createElement('li');
+		let a = document.createElement('a');
+		a.textContent = webResourceObject.WebResourceURL;
+		a.href = unwebarchiver.getBlobURL(webResourceObject.WebResourceData, webResourceObject.WebResourceMIMEType);
+		li.append(a);
+		ul.append(li);
+	},
+	getBlobURL(dataBuffer, dataType) {
+		const blob = new Blob(new Array(dataBuffer), { type:dataType });
+		return URL.createObjectURL(blob);
 	}
 };
 
@@ -36,31 +68,43 @@ class WebArchive {
 			return;
 		}
 		this.file = file;
-		this.read();
 		return this;
 	}
-	read() {
+	async read() {
 		const reader = new FileReader();
-		reader.addEventListener('load', (event) => {
-			this.buffer = event.target.result;
-			this.parse();
-			// document.querySelector('iframe').setAttribute('src', this.getURL());
-			// console.log(this.getURL());
+
+		return new Promise((resolve, reject) => {
+
+			reader.addEventListener('error', (event) => {
+				reader.abort();
+				reject(new DOMException("Problem parsing input file."));
+			});
+
+			reader.addEventListener('load', (event) => {
+				this.buffer = event.target.result;
+				this.parse();
+				resolve(this);
+			});
+			reader.readAsArrayBuffer(this.file);
+
 		});
-		reader.readAsArrayBuffer(this.file);
 	}
 	parse() {
 		this.header = this.#parseHeader();
 		this.trailer = this.#parseTrailer();
 		this.offsetTable = this.#parseOffsetTable();
-		console.debug(this.header, this.trailer, this.offsetTable);
 		this.#cacheObjectTable();
 		this.objectTable = this.#parseObjectTable();
+		return this.objectTable;
 	}
 	getURL() {
 		if(!this.objectTable) { return "#"; }
 		const blob = new Blob(new Array(this.objectTable.WebMainResource.WebResourceData), { type: this.objectTable.WebMainResource.WebResourceMIMEType })
 		return URL.createObjectURL(blob);
+	}
+	getJSON() {
+		if(!this.objectTable) { return null; }
+		return this.objectTable;
 	}
 	#parseHeader() {
 		// The header is a magic number ("bplist") followed
@@ -103,48 +147,108 @@ class WebArchive {
 		if(!this.offsetTable) { return; }
 		this._cachedObjectTable = new Array();
 		this._uncachedObjectTable = new Array();
-		console.debug('cacheObjectTable::before', this.offsetTable.length);
+
 		for(let i=0; i < this.offsetTable.length; i++) {
 			const offset = this.offsetTable[i];
 			const marker = this.buffer.readUIntBE(offset, 1);
 			const lmb = marker >> 4; // Left most bits
 			// We cache all objects except 0x0A (Array) and 0x0D (Dictionary)
 			if(lmb != 0x0A && lmb != 0x0D) {
-				// this._cachedObjectTable[offset] = this.#readObject(marker, offset);
-				this._cachedObjectTable.push(this.#readObject(marker, offset));
+				this._cachedObjectTable[offset] = this.#readObject(marker, offset);
 			} else {
+				this._cachedObjectTable[offset] = null;
 				this._uncachedObjectTable.push(offset);
-				// this._cachedObjectTable[offset] = null;
 			}
 		}
-		for(let i=0; i < this._uncachedObjectTable.length; i++) {
-			const offset = this._uncachedObjectTable[i];
-			const marker = this.buffer.readUIntBE(offset, 1);
-			// const marker = this.buffer.readUIntBE(offset, 1);
+		while(this._uncachedObjectTable.length > 0) {
+			for(let i=0; i < this._uncachedObjectTable.length; i++) {
+				const offset = this._uncachedObjectTable[i];
+				const marker = this.buffer.readUIntBE(offset, 1);
+				const lmb = marker >> 4; // Left most bits
+				const rmb = (marker << 4 & 0xFF) >> 4; // Right most bits
+				let callback = function() {};
+				switch(lmb) {
+					// 0x0A — Array
+					case 0x0A:
+						callback = this.#cacheArray;
+						break;
+					// 0x0D — Dictionary
+					case 0x0D:
+						callback = this.#cacheDictionary;
+						break;
+				}
+				let obj = this.#cacheObjectWithUnknownSize(offset+1, rmb, callback.bind(this));
+				if(obj != null) {
+					this._cachedObjectTable[offset] = obj;
+					const index = this._uncachedObjectTable.indexOf(offset);
+					this._uncachedObjectTable.splice(index, 1);
+				}
+			}
 		}
-		console.debug('cacheObjectTable::after', this._cachedObjectTable.length, this._cachedObjectTable);
-		console.debug('uncacheObjectTable', this._uncachedObjectTable.length, this._uncachedObjectTable);
+	}
+	#cacheObjectWithUnknownSize(offset, size, callback) {
+		if(size == 0x0F) {
+			const sizeLength = this.#readObjectSizeLength(offset);
+			size = this.buffer.readUIntBE(offset+1, sizeLength);
+			offset += 1 + sizeLength;
+		}
+		return callback(offset, size);
+	}
+	#cacheDictionary(offset, pairs) {
+		// We only look through values of the Dictionary.
+		const valuesBuffer = this.buffer.slice(offset+pairs, offset + (pairs*2));
+		const valuesArray = new Uint8Array(valuesBuffer);
+		valuesArray.forEach((item, i) => {
+			const offset = this.offsetTable[valuesArray[i]];
+			const marker = this.buffer.readUIntBE(offset, 1);
+			const lmb = marker >> 4; // Left most bits
+			// If a value is a Dictionary or an Array…
+			if(lmb == 0x0A || lmb == 0x0D) {
+				// We check if this value has been cached.
+				// If it's not in the cache, we return `null` immediately.
+				if(this._cachedObjectTable[offset] == null) {
+					return null;
+				}
+			}
+		});
+		// If there was no uncached Dictionary or Array, we can return the actual Dictionary.
+		return this.#readDictionary(offset, pairs);
+
+	}
+	#cacheArray(offset, size) {
+		const keysBuffer = this.buffer.slice(offset, offset + size);
+		const keysArray = new Uint8Array(keysBuffer);
+		keysArray.forEach((item, i) => {
+			const offset = this.offsetTable[keysArray[i]];
+			const marker = this.buffer.readUIntBE(offset, 1);
+			const lmb = marker >> 4; // Left most bits
+			// If a value is a Dictionary or an Array…
+			if(lmb == 0x0A || lmb == 0x0D) {
+				// We check if this value has been cached.
+				// If it's not in the cache, we return `null` immediately.
+				if(this._cachedObjectTable[offset] == null) {
+					return null;
+				}
+			}
+		});
+		// If there was no uncached Dictionary or Array, we can return the actual Array.
+		return this.#readArray(offset, size);
 	}
 	#parseObjectTable() {
 		const offset = this.offsetTable[this.trailer.topLevelObjectOffset];
 		const marker = this.buffer.readUIntBE(offset, 1);
 		let objectTable = null;
 		try {
-			x = 0;
 			objectTable = this.#readObject(marker, offset);
 		} catch(e) {
-			console.error(`InternalError: too much recursion`, x);
+			console.error(`InternalError: too much recursion`);
 		}
 		return objectTable;
 	}
 	#readObject(marker, offset) {
-		// if(x > 1000)
-		// 	return null;
-		// if(this._cachedObjectTable && this._cachedObjectTable[offset]) {
-		// 	console.debug('readObject', 'fromCache', offset);
-		// 	return this._cachedObjectTable[offset];
-		// }
-		x++;
+		if(this._cachedObjectTable && this._cachedObjectTable[offset]) {
+			return this._cachedObjectTable[offset];
+		}
 		const lmb = marker >> 4; // Left most bits
 		const rmb = (marker << 4 & 0xFF) >> 4; // Right most bits
 		switch(lmb) {

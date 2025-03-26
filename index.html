@@ -20,15 +20,9 @@
 			<label for="unwebarchiver-input-file">File <span>(<code>.webarchive</code>)</span></label>
 			<input id="unwebarchiver-input-file" type="file" accept=".webarchive,.plist" required />
 		</form>
-		<div class="result">
+		<div class="result" hidden>
 			<ul class="result-files">
-				<li>index.html</li>
-				<li>Assets</li>
-				<li>Images</li>
 			</ul>
-		</div>
-		<div hidden>
-			<iframe allowTransparency="true"></iframe>
 		</div>
 		<p>
 			<code>.webarchive</code> files are binary <code>.plist</code> files saved from Safari when using <code>File > Save as…</code> on a web page.
