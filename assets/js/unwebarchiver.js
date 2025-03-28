@@ -1,6 +1,8 @@
 const unwebarchiver = {
 	init: function() {
+		unwebarchiver.form = document.getElementById('unwebarchiver-form');
 		unwebarchiver.input = document.getElementById('unwebarchiver-input-file');
+		unwebarchiver.output = document.getElementById('unwebarchiver-output');
 
 		if(!unwebarchiver.input) {
 			return;
@@ -11,7 +13,6 @@ const unwebarchiver = {
 		}
 
 		unwebarchiver.input.addEventListener('change', (event) => {
-			unwebarchiver.clearResults();
 			unwebarchiver.readWebArchive();
 		});
 	},
@@ -22,34 +23,62 @@ const unwebarchiver = {
 			let webArchiveFile = new WebArchive(file);
 			webArchiveFile.read().then(() => {
 				let webArchiveJSON = webArchiveFile.getJSON();
-				unwebarchiver.addResults(webArchiveJSON);
+				unwebarchiver.addOutput(webArchiveJSON);
 				console.log(webArchiveJSON, unwebarchiver.getBlobURL(webArchiveJSON.WebMainResource.WebResourceData, webArchiveJSON.WebMainResource.WebResourceMIMEType));
 			});
 		}
 	},
-	clearResults: function() {
-		const ul = document.querySelector('.result-files');
-		ul.replaceChildren();
-		ul.parentNode.setAttribute('hidden', 'hidden');
+	clearOutput: function() {
+		unwebarchiver.output.querySelector('tbody').replaceChildren();
 	},
-	addResults: function(webArchiveJSON) {
-		const ul = document.querySelector('.result-files');
-		ul.replaceChildren();
-		ul.parentNode.removeAttribute('hidden');
-		unwebarchiver.addSingleResult(webArchiveJSON.WebMainResource);
+	addOutput: function(webArchiveJSON) {
+		unwebarchiver.clearOutput();
+		unwebarchiver.addLine(webArchiveJSON.WebMainResource);
 		for(let i=0; i < webArchiveJSON.WebSubresources.length; i++) {
 			const webResourceObject = webArchiveJSON.WebSubresources[i];
-			unwebarchiver.addSingleResult(webResourceObject);
+			unwebarchiver.addLine(webResourceObject);
 		}
 	},
-	addSingleResult: function(webResourceObject) {
-		const ul = document.querySelector('.result-files');
-		let li = document.createElement('li');
-		let a = document.createElement('a');
-		a.textContent = webResourceObject.WebResourceURL;
-		a.href = unwebarchiver.getBlobURL(webResourceObject.WebResourceData, webResourceObject.WebResourceMIMEType);
-		li.append(a);
-		ul.append(li);
+	addLine: function(webResourceObject) {
+		const data = unwebarchiver.getFormattedData(webResourceObject);
+		const tbody = unwebarchiver.output.querySelector('tbody');
+		let tr = document.createElement('tr');
+		let tdDomain = document.createElement('td');
+		tdDomain.textContent = data.domain;
+		tr.appendChild(tdDomain);
+		let tdFile = document.createElement('td');
+		let link = document.createElement('a');
+		link.textContent = data.file;
+		link.href = data.blobURL;
+		link.title = data.URL;
+		tdFile.appendChild(link);
+		tr.appendChild(tdFile);
+		let tdSize = document.createElement('td');
+		tdSize.textContent = data.size;
+		tr.appendChild(tdSize);
+		let tdKind = document.createElement('td');
+		tdKind.textContent = data.kind;
+		tr.appendChild(tdKind);
+		tbody.append(tr);
+	},
+	getFormattedData(webResourceObject) {
+		let data = {}
+		const resourceURL = new URL(webResourceObject.WebResourceURL);
+		data.domain = resourceURL.host;
+		if(data.domain == '') { data.domain = 'Data URL'; }
+		data.file = resourceURL.pathname.split('/').pop();
+		if(data.file == '') { data.file = '/'; }
+		data.size = unwebarchiver.getSize(webResourceObject.WebResourceData.byteLength);
+		data.kind = webResourceObject.WebResourceMIMEType;
+		data.blobURL = unwebarchiver.getBlobURL(webResourceObject.WebResourceData, webResourceObject.WebResourceMIMEType);
+		data.URL = webResourceObject.WebResourceURL;
+		return data;
+	},
+	getSize(byteLength) {
+		const sizes = ['Bytes', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+		const k = 1024;
+		const i = Math.floor(Math.log(byteLength) / Math.log(k));
+		return `${parseFloat((byteLength / Math.pow(k, i)).toFixed(0))} ${sizes[i]}`
 	},
 	getBlobURL(dataBuffer, dataType) {
 		const blob = new Blob(new Array(dataBuffer), { type:dataType });

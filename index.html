@@ -16,14 +16,24 @@
 		</p>
 	</header>
 	<main role="main">
-		<form action="/">
+		<form action="/" id="unwebarchiver-form">
 			<label for="unwebarchiver-input-file">File <span>(<code>.webarchive</code>)</span></label>
 			<input id="unwebarchiver-input-file" type="file" accept=".webarchive,.plist" required />
 		</form>
-		<div class="result" hidden>
-			<ul class="result-files">
-			</ul>
-		</div>
+		<output id="unwebarchiver-output" form="unwebarchiver-form">
+			<table>
+				<thead>
+					<tr>
+						<th>Domain</th>
+						<th>File</th>
+						<th>Size</th>
+						<th>Kind</th>
+					</tr>
+				</thead>
+				<tbody>
+				</tbody>
+			</table>
+		</output>
 		<p>
 			<code>.webarchive</code> files are binary <code>.plist</code> files saved from Safari when using <code>File > Save as…</code> on a web page.
 		</p>
