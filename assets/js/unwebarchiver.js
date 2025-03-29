@@ -3,6 +3,7 @@ const unwebarchiver = {
 		unwebarchiver.form = document.getElementById('unwebarchiver-form');
 		unwebarchiver.input = document.getElementById('unwebarchiver-input-file');
 		unwebarchiver.output = document.getElementById('unwebarchiver-output');
+		unwebarchiver.template = document.getElementById('unwebarchiver-template');
 
 		if(!unwebarchiver.input) {
 			return;
@@ -28,16 +29,21 @@ const unwebarchiver = {
 			});
 		}
 	},
-	clearOutput: function() {
-		unwebarchiver.output.querySelector('tbody').replaceChildren();
-	},
 	addOutput: function(webArchiveJSON) {
 		unwebarchiver.clearOutput();
+		const template = document.importNode(unwebarchiver.template.content, true);
+		unwebarchiver.output.appendChild(template);
 		unwebarchiver.addLine(webArchiveJSON.WebMainResource);
-		for(let i=0; i < webArchiveJSON.WebSubresources.length; i++) {
-			const webResourceObject = webArchiveJSON.WebSubresources[i];
-			unwebarchiver.addLine(webResourceObject);
+		if(webArchiveJSON.WebSubresources) {
+			for(let i=0; i < webArchiveJSON.WebSubresources.length; i++) {
+				const webResourceObject = webArchiveJSON.WebSubresources[i];
+				unwebarchiver.addLine(webResourceObject);
+			}
 		}
+	},
+	clearOutput: function() {
+		unwebarchiver.output.removeAttribute('hidden');
+		unwebarchiver.output.replaceChildren();
 	},
 	addLine: function(webResourceObject) {
 		const data = unwebarchiver.getFormattedData(webResourceObject);
