@@ -212,7 +212,7 @@ class WebArchive {
 						callback = this.#cacheDictionary;
 						break;
 				}
-				let obj = this.#cacheObjectWithUnknownSize(offset+1, rmb, callback.bind(this));
+				let obj = this.#cacheLargeObject(offset+1, rmb, callback.bind(this));
 				if(obj != null) {
 					this._cachedObjectTable[offset] = obj;
 					const index = this._uncachedObjectTable.indexOf(offset);
@@ -221,7 +221,7 @@ class WebArchive {
 			}
 		}
 	}
-	#cacheObjectWithUnknownSize(offset, size, callback) {
+	#cacheLargeObject(offset, size, callback) {
 		if(size == 0x0F) {
 			const sizeLength = this.#readObjectSizeLength(offset);
 			size = this.buffer.readUIntBE(offset+1, sizeLength);
@@ -303,16 +303,16 @@ class WebArchive {
 				return this.#readData(offset+1);
 			// 0x05 - ASCII String
 			case 0x05:
-				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readASCIIString.bind(this));
+				return this.#readLargeObject(offset+1, rmb, this.#readASCIIString.bind(this));
 			// 0x06 - Unicode String
 			case 0x06:
-				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readUnicodeString.bind(this));
+				return this.#readLargeObject(offset+1, rmb, this.#readUnicodeString.bind(this));
 			// 0x0A — Array
 			case 0x0A:
-				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readArray.bind(this));
+				return this.#readLargeObject(offset+1, rmb, this.#readArray.bind(this));
 			// 0x0D — Dictionary
 			case 0x0D:
-				return this.#readObjectWithUnknownSize(offset+1, rmb, this.#readDictionary.bind(this));
+				return this.#readLargeObject(offset+1, rmb, this.#readDictionary.bind(this));
 			case 0x01:
 				console.debug('0x01 - Int');
 				break;
@@ -335,7 +335,7 @@ class WebArchive {
 		const rmb = (nextByte << 4 & 0xFF) >> 4; // Right most bits
 		return Math.pow(2, rmb);
 	}
-	#readObjectWithUnknownSize(offset, size, callback) {
+	#readLargeObject(offset, size, callback) {
 		if(size == 0x0F) {
 			const sizeLength = this.#readObjectSizeLength(offset);
 			size = this.buffer.readUIntBE(offset+1, sizeLength);
