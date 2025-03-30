@@ -135,6 +135,18 @@ output {
 	overscroll-behavior: contain;
 }
 
+output:has(.error) {
+	--external-size: 2rem;
+}
+
+.error {
+	padding: 0.5rem 1rem;
+	border-radius: 0.5rem;
+	border: 0.0625rem solid;
+	color: light-dark(#e30000, #ff3037);
+	background-color: light-dark(#fff2f4, #300);
+}
+
 table {
 	width: 100%;
 	table-layout: fixed;

@@ -24,8 +24,10 @@ const unwebarchiver = {
 			let webArchiveFile = new WebArchive(file);
 			webArchiveFile.read().then(() => {
 				let webArchiveJSON = webArchiveFile.getJSON();
-				unwebarchiver.addOutput(webArchiveJSON);
-				console.log(webArchiveJSON, unwebarchiver.getBlobURL(webArchiveJSON.WebMainResource.WebResourceData, webArchiveJSON.WebMainResource.WebResourceMIMEType));
+				if(webArchiveJSON) {
+					unwebarchiver.addOutput(webArchiveJSON);
+					console.log(webArchiveJSON, unwebarchiver.getBlobURL(webArchiveJSON.WebMainResource.WebResourceData, webArchiveJSON.WebMainResource.WebResourceMIMEType));
+				}
 			});
 		}
 	},
@@ -89,6 +91,14 @@ const unwebarchiver = {
 	getBlobURL(dataBuffer, dataType) {
 		const blob = new Blob(new Array(dataBuffer), { type:dataType });
 		return URL.createObjectURL(blob);
+	},
+	error(log) {
+		console.error(log);
+		unwebarchiver.clearOutput();
+		const p = document.createElement('p');
+		p.className = 'error';
+		p.textContent = log;
+		unwebarchiver.output.appendChild(p);
 	}
 };
 
@@ -212,11 +222,16 @@ class WebArchive {
 						callback = this.#cacheDictionary;
 						break;
 				}
-				let obj = this.#cacheLargeObject(offset+1, rmb, callback.bind(this));
-				if(obj != null) {
-					this._cachedObjectTable[offset] = obj;
-					const index = this._uncachedObjectTable.indexOf(offset);
-					this._uncachedObjectTable.splice(index, 1);
+				try {
+					let obj = this.#cacheLargeObject(offset+1, rmb);
+					if(obj != null) {
+						this._cachedObjectTable[offset] = obj;
+						const index = this._uncachedObjectTable.indexOf(offset);
+						this._uncachedObjectTable.splice(index, 1);
+					}
+				} catch(e) {
+					unwebarchiver.error(`Error caching object 0x${lmb.toString(16).padStart(2, "0").toUpperCase()} with marker 0x${marker.toString(16).padStart(2, "0").toUpperCase()} at 0x${(offset+1).toString(16).padStart(2, "0").toUpperCase()}.`);
+					return false;
 				}
 			}
 		}
@@ -234,14 +249,14 @@ class WebArchive {
 		const valuesBuffer = this.buffer.slice(offset+pairs, offset + (pairs*2));
 		const valuesArray = new Uint8Array(valuesBuffer);
 		valuesArray.forEach((item, i) => {
-			const offset = this.offsetTable[valuesArray[i]];
-			const marker = this.buffer.readUIntBE(offset, 1);
+			const itemOffset = this.offsetTable[valuesArray[i]];
+			const marker = this.buffer.readUIntBE(itemOffset, 1);
 			const lmb = marker >> 4; // Left most bits
 			// If a value is a Dictionary or an Array…
 			if(lmb == 0x0A || lmb == 0x0D) {
 				// We check if this value has been cached.
 				// If it's not in the cache, we return `null` immediately.
-				if(this._cachedObjectTable[offset] == null) {
+				if(this._cachedObjectTable[itemOffset] == null) {
 					return null;
 				}
 			}
@@ -254,14 +269,14 @@ class WebArchive {
 		const keysBuffer = this.buffer.slice(offset, offset + size);
 		const keysArray = new Uint8Array(keysBuffer);
 		keysArray.forEach((item, i) => {
-			const offset = this.offsetTable[keysArray[i]];
-			const marker = this.buffer.readUIntBE(offset, 1);
+			const itemOffset = this.offsetTable[keysArray[i]];
+			const marker = this.buffer.readUIntBE(itemOffset, 1);
 			const lmb = marker >> 4; // Left most bits
 			// If a value is a Dictionary or an Array…
 			if(lmb == 0x0A || lmb == 0x0D) {
 				// We check if this value has been cached.
 				// If it's not in the cache, we return `null` immediately.
-				if(this._cachedObjectTable[offset] == null) {
+				if(this._cachedObjectTable[itemOffset] == null) {
 					return null;
 				}
 			}
@@ -276,7 +291,7 @@ class WebArchive {
 		try {
 			objectTable = this.#readObject(marker, offset);
 		} catch(e) {
-			console.error(`InternalError: too much recursion`);
+			unwebarchiver.error(`InternalError: too much recursion`);
 		}
 		return objectTable;
 	}
@@ -348,17 +363,17 @@ class WebArchive {
 		const keysBuffer = this.buffer.slice(offset, offset + pairs);
 		const keysArray = new Uint8Array(keysBuffer);
 		keysArray.forEach((item, i) => {
-			const offset = this.offsetTable[keysArray[i]];
-			const marker = this.buffer.readUIntBE(offset, 1);
-			const obj = this.#readObject(marker, offset);
+			const itemOffset = this.offsetTable[keysArray[i]];
+			const marker = this.buffer.readUIntBE(itemOffset, 1);
+			const obj = this.#readObject(marker, itemOffset);
 			dictArray.push({ key: obj, value: null });
 		});
 		const valuesBuffer = this.buffer.slice(offset+pairs, offset + (pairs*2));
 		const valuesArray = new Uint8Array(valuesBuffer);
 		valuesArray.forEach((item, i) => {
-			const offset = this.offsetTable[valuesArray[i]];
-			const marker = this.buffer.readUIntBE(offset, 1);
-			const obj = this.#readObject(marker, offset);
+			const itemOffset = this.offsetTable[valuesArray[i]];
+			const marker = this.buffer.readUIntBE(itemOffset, 1);
+			const obj = this.#readObject(marker, itemOffset);
 			dictArray[i].value = obj;
 		});
 		let dictObject = {};
@@ -398,9 +413,9 @@ class WebArchive {
 		const keysBuffer = this.buffer.slice(offset, offset + size);
 		const keysArray = new Uint8Array(keysBuffer);
 		keysArray.forEach((item, i) => {
-			const offset = this.offsetTable[keysArray[i]];
-			const marker = this.buffer.readUIntBE(offset, 1);
-			objectsArray.push(this.#readObject(marker, offset));
+			const itemOffset = this.offsetTable[keysArray[i]];
+			const marker = this.buffer.readUIntBE(itemOffset, 1);
+			objectsArray.push(this.#readObject(marker, itemOffset));
 		});
 		return objectsArray;
 	}
