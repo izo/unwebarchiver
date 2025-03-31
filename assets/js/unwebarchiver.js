@@ -26,7 +26,6 @@ const unwebarchiver = {
 				let webArchiveJSON = webArchiveFile.getJSON();
 				if(webArchiveJSON) {
 					unwebarchiver.addOutput(webArchiveJSON);
-					console.log(webArchiveJSON, unwebarchiver.getBlobURL(webArchiveJSON.WebMainResource.WebResourceData, webArchiveJSON.WebMainResource.WebResourceMIMEType));
 				}
 			});
 		}
@@ -71,6 +70,7 @@ const unwebarchiver = {
 	},
 	getFormattedData(webResourceObject) {
 		let data = {}
+		if(!webResourceObject) return data;
 		const resourceURL = new URL(webResourceObject.WebResourceURL);
 		data.domain = resourceURL.host;
 		if(data.domain == '') { data.domain = 'Data URL'; }
@@ -138,14 +138,8 @@ class WebArchive {
 		this.header = this.#parseHeader();
 		this.trailer = this.#parseTrailer();
 		this.offsetTable = this.#parseOffsetTable();
-		this.#cacheObjectTable();
 		this.objectTable = this.#parseObjectTable();
 		return this.objectTable;
-	}
-	getURL() {
-		if(!this.objectTable) { return "#"; }
-		const blob = new Blob(new Array(this.objectTable.WebMainResource.WebResourceData), { type: this.objectTable.WebMainResource.WebResourceMIMEType })
-		return URL.createObjectURL(blob);
 	}
 	getJSON() {
 		if(!this.objectTable) { return null; }
@@ -188,102 +182,6 @@ class WebArchive {
 		}
 		return offsetTable;
 	}
-	#cacheObjectTable() {
-		if(!this.offsetTable) { return; }
-		this._cachedObjectTable = new Array();
-		this._uncachedObjectTable = new Array();
-
-		for(let i=0; i < this.offsetTable.length; i++) {
-			const offset = this.offsetTable[i];
-			const marker = this.buffer.readUIntBE(offset, 1);
-			const lmb = marker >> 4; // Left most bits
-			// We cache all objects except 0x0A (Array) and 0x0D (Dictionary)
-			if(lmb != 0x0A && lmb != 0x0D) {
-				this._cachedObjectTable[offset] = this.#readObject(marker, offset);
-			} else {
-				this._cachedObjectTable[offset] = null;
-				this._uncachedObjectTable.push(offset);
-			}
-		}
-		while(this._uncachedObjectTable.length > 0) {
-			for(let i=0; i < this._uncachedObjectTable.length; i++) {
-				const offset = this._uncachedObjectTable[i];
-				const marker = this.buffer.readUIntBE(offset, 1);
-				const lmb = marker >> 4; // Left most bits
-				const rmb = (marker << 4 & 0xFF) >> 4; // Right most bits
-				let callback = function() {};
-				switch(lmb) {
-					// 0x0A — Array
-					case 0x0A:
-						callback = this.#cacheArray;
-						break;
-					// 0x0D — Dictionary
-					case 0x0D:
-						callback = this.#cacheDictionary;
-						break;
-				}
-				try {
-					let obj = this.#cacheLargeObject(offset+1, rmb);
-					if(obj != null) {
-						this._cachedObjectTable[offset] = obj;
-						const index = this._uncachedObjectTable.indexOf(offset);
-						this._uncachedObjectTable.splice(index, 1);
-					}
-				} catch(e) {
-					unwebarchiver.error(`Error caching object 0x${lmb.toString(16).padStart(2, "0").toUpperCase()} with marker 0x${marker.toString(16).padStart(2, "0").toUpperCase()} at 0x${(offset+1).toString(16).padStart(2, "0").toUpperCase()}.`);
-					return false;
-				}
-			}
-		}
-	}
-	#cacheLargeObject(offset, size, callback) {
-		if(size == 0x0F) {
-			const sizeLength = this.#readObjectSizeLength(offset);
-			size = this.buffer.readUIntBE(offset+1, sizeLength);
-			offset += 1 + sizeLength;
-		}
-		return callback(offset, size);
-	}
-	#cacheDictionary(offset, pairs) {
-		// We only look through values of the Dictionary.
-		const valuesBuffer = this.buffer.slice(offset+pairs, offset + (pairs*2));
-		const valuesArray = new Uint8Array(valuesBuffer);
-		valuesArray.forEach((item, i) => {
-			const itemOffset = this.offsetTable[valuesArray[i]];
-			const marker = this.buffer.readUIntBE(itemOffset, 1);
-			const lmb = marker >> 4; // Left most bits
-			// If a value is a Dictionary or an Array…
-			if(lmb == 0x0A || lmb == 0x0D) {
-				// We check if this value has been cached.
-				// If it's not in the cache, we return `null` immediately.
-				if(this._cachedObjectTable[itemOffset] == null) {
-					return null;
-				}
-			}
-		});
-		// If there was no uncached Dictionary or Array, we can return the actual Dictionary.
-		return this.#readDictionary(offset, pairs);
-
-	}
-	#cacheArray(offset, size) {
-		const keysBuffer = this.buffer.slice(offset, offset + size);
-		const keysArray = new Uint8Array(keysBuffer);
-		keysArray.forEach((item, i) => {
-			const itemOffset = this.offsetTable[keysArray[i]];
-			const marker = this.buffer.readUIntBE(itemOffset, 1);
-			const lmb = marker >> 4; // Left most bits
-			// If a value is a Dictionary or an Array…
-			if(lmb == 0x0A || lmb == 0x0D) {
-				// We check if this value has been cached.
-				// If it's not in the cache, we return `null` immediately.
-				if(this._cachedObjectTable[itemOffset] == null) {
-					return null;
-				}
-			}
-		});
-		// If there was no uncached Dictionary or Array, we can return the actual Array.
-		return this.#readArray(offset, size);
-	}
 	#parseObjectTable() {
 		const offset = this.offsetTable[this.trailer.topLevelObjectOffset];
 		const marker = this.buffer.readUIntBE(offset, 1);
@@ -291,14 +189,12 @@ class WebArchive {
 		try {
 			objectTable = this.#readObject(marker, offset);
 		} catch(e) {
-			unwebarchiver.error(`InternalError: too much recursion`);
+			unwebarchiver.error(`Error parsing object table with marker 0x${marker.toString(16).padStart(2, "0").toUpperCase()} at offset 0x${offset.toString(16).padStart(2, "0").toUpperCase()} in offset table of length ${this.offsetTable.length}.`);
+			return false;
 		}
 		return objectTable;
 	}
 	#readObject(marker, offset) {
-		if(this._cachedObjectTable && this._cachedObjectTable[offset]) {
-			return this._cachedObjectTable[offset];
-		}
 		const lmb = marker >> 4; // Left most bits
 		const rmb = (marker << 4 & 0xFF) >> 4; // Right most bits
 		switch(lmb) {
@@ -360,16 +256,20 @@ class WebArchive {
 	}
 	#readDictionary(offset, pairs) {
 		let dictArray = new Array();
-		const keysBuffer = this.buffer.slice(offset, offset + pairs);
-		const keysArray = new Uint8Array(keysBuffer);
+		let keysArray = new Array();
+		for(let i=0; i < pairs; i++) {
+			keysArray.push(this.buffer.readUIntBE(offset+(i*this.trailer.objectRefsSize), this.trailer.objectRefsSize));
+		}
 		keysArray.forEach((item, i) => {
 			const itemOffset = this.offsetTable[keysArray[i]];
 			const marker = this.buffer.readUIntBE(itemOffset, 1);
 			const obj = this.#readObject(marker, itemOffset);
 			dictArray.push({ key: obj, value: null });
 		});
-		const valuesBuffer = this.buffer.slice(offset+pairs, offset + (pairs*2));
-		const valuesArray = new Uint8Array(valuesBuffer);
+		let valuesArray = new Array();
+		for(let i=0; i < pairs; i++) {
+			valuesArray.push(this.buffer.readUIntBE(offset+(pairs*this.trailer.objectRefsSize)+(i*this.trailer.objectRefsSize), this.trailer.objectRefsSize));
+		}
 		valuesArray.forEach((item, i) => {
 			const itemOffset = this.offsetTable[valuesArray[i]];
 			const marker = this.buffer.readUIntBE(itemOffset, 1);
@@ -383,6 +283,19 @@ class WebArchive {
 			dictObject[key] = value;
 		});
 		return dictObject;
+	}
+	#readArray(offset, size) {
+		let objectsArray = new Array();
+		let keysArray = new Array();
+		for(let i=0; i < size; i++) {
+			keysArray.push(this.buffer.readUIntBE(offset+(i*this.trailer.objectRefsSize), this.trailer.objectRefsSize));
+		}
+		keysArray.forEach((item, i) => {
+			const itemOffset = this.offsetTable[keysArray[i]];
+			const marker = this.buffer.readUIntBE(itemOffset, 1);
+			objectsArray.push(this.#readObject(marker, itemOffset));
+		});
+		return objectsArray;
 	}
 	#readString(offset, size, encoding) {
 		const charsBuffer = this.buffer.slice(offset, offset + size);
@@ -407,17 +320,6 @@ class WebArchive {
 		const epoch = new Date("2001-01-01T00:00:00Z");
 		const elapsed = new DataView(dateBuffer).getFloat64() * 1000;
 		return new Date(epoch.valueOf() + elapsed.valueOf());
-	}
-	#readArray(offset, size) {
-		let objectsArray = new Array();
-		const keysBuffer = this.buffer.slice(offset, offset + size);
-		const keysArray = new Uint8Array(keysBuffer);
-		keysArray.forEach((item, i) => {
-			const itemOffset = this.offsetTable[keysArray[i]];
-			const marker = this.buffer.readUIntBE(itemOffset, 1);
-			objectsArray.push(this.#readObject(marker, itemOffset));
-		});
-		return objectsArray;
 	}
 	#readData(offset) {
 		const sizeLength = this.#readObjectSizeLength(offset);
