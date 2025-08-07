@@ -1,12 +1,29 @@
 const unwebarchiver = {
+	currentWebArchiveData: null,
 	init: function() {
 		unwebarchiver.form = document.getElementById('unwebarchiver-form');
 		unwebarchiver.input = document.getElementById('unwebarchiver-input-file');
 		unwebarchiver.output = document.getElementById('unwebarchiver-output');
 		unwebarchiver.template = document.getElementById('unwebarchiver-template');
+		unwebarchiver.exportControls = document.getElementById('unwebarchiver-export-controls');
+		unwebarchiver.exportMarkdownBtn = document.getElementById('export-markdown-btn');
+		unwebarchiver.exportPdfBtn = document.getElementById('export-pdf-btn');
 
 		if(!unwebarchiver.input) {
 			return;
+		}
+
+		// Add export button event listeners
+		if(unwebarchiver.exportMarkdownBtn) {
+			unwebarchiver.exportMarkdownBtn.addEventListener('click', () => {
+				unwebarchiver.exportToMarkdown(unwebarchiver.currentWebArchiveData);
+			});
+		}
+
+		if(unwebarchiver.exportPdfBtn) {
+			unwebarchiver.exportPdfBtn.addEventListener('click', () => {
+				unwebarchiver.exportToPDF(unwebarchiver.currentWebArchiveData);
+			});
 		}
 
 		if(unwebarchiver.input.files.length > 0) {
@@ -32,6 +49,7 @@ const unwebarchiver = {
 	},
 	addOutput: function(webArchiveJSON) {
 		unwebarchiver.clearOutput();
+		unwebarchiver.currentWebArchiveData = webArchiveJSON;
 		const template = document.importNode(unwebarchiver.template.content, true);
 		unwebarchiver.output.appendChild(template);
 		unwebarchiver.addLine(webArchiveJSON.WebMainResource);
@@ -41,10 +59,19 @@ const unwebarchiver = {
 				unwebarchiver.addLine(webResourceObject);
 			}
 		}
+		// Show export controls
+		if(unwebarchiver.exportControls) {
+			unwebarchiver.exportControls.removeAttribute('hidden');
+		}
 	},
 	clearOutput: function() {
 		unwebarchiver.output.removeAttribute('hidden');
 		unwebarchiver.output.replaceChildren();
+		// Hide export controls
+		if(unwebarchiver.exportControls) {
+			unwebarchiver.exportControls.setAttribute('hidden', '');
+		}
+		unwebarchiver.currentWebArchiveData = null;
 	},
 	addLine: function(webResourceObject) {
 		const data = unwebarchiver.getFormattedData(webResourceObject);
@@ -99,6 +126,150 @@ const unwebarchiver = {
 		p.className = 'error';
 		p.textContent = log;
 		unwebarchiver.output.appendChild(p);
+		// Hide export controls on error
+		if(unwebarchiver.exportControls) {
+			unwebarchiver.exportControls.setAttribute('hidden', '');
+		}
+	},
+	exportToMarkdown: function(webArchiveJSON) {
+		if (!webArchiveJSON) {
+			console.error('No data to export');
+			return;
+		}
+
+		let markdown = `# WebArchive Export\n\n`;
+		markdown += `Export généré le ${new Date().toLocaleString()}\n\n`;
+		
+		// Main resource
+		if (webArchiveJSON.WebMainResource) {
+			const mainData = unwebarchiver.getFormattedData(webArchiveJSON.WebMainResource);
+			markdown += `## Ressource principale\n\n`;
+			markdown += `- **URL**: ${webArchiveJSON.WebMainResource.WebResourceURL}\n`;
+			markdown += `- **Domaine**: ${mainData.domain}\n`;
+			markdown += `- **Fichier**: ${mainData.file}\n`;
+			markdown += `- **Taille**: ${mainData.size}\n`;
+			markdown += `- **Type MIME**: ${mainData.kind}\n\n`;
+		}
+
+		// Sub resources
+		if (webArchiveJSON.WebSubresources && webArchiveJSON.WebSubresources.length > 0) {
+			markdown += `## Sous-ressources (${webArchiveJSON.WebSubresources.length})\n\n`;
+			markdown += `| Domaine | Fichier | Taille | Type MIME | URL |\n`;
+			markdown += `|---------|---------|--------|-----------|-----|\n`;
+			
+			webArchiveJSON.WebSubresources.forEach(resource => {
+				const data = unwebarchiver.getFormattedData(resource);
+				markdown += `| ${data.domain} | ${data.file} | ${data.size} | ${data.kind} | ${resource.WebResourceURL} |\n`;
+			});
+		}
+
+		// Create and download file
+		const blob = new Blob([markdown], { type: 'text/markdown' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `webarchive-export-${Date.now()}.md`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+	},
+	exportToPDF: function(webArchiveJSON) {
+		if (!webArchiveJSON) {
+			console.error('No data to export');
+			return;
+		}
+
+		// Create HTML content for PDF
+		let htmlContent = `
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<meta charset="UTF-8">
+			<title>WebArchive Export</title>
+			<style>
+				body { font-family: Arial, sans-serif; margin: 40px; }
+				h1 { color: #333; border-bottom: 2px solid #7224d8; padding-bottom: 10px; }
+				h2 { color: #666; margin-top: 30px; }
+				table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+				th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+				th { background-color: #f2f2f2; font-weight: bold; }
+				tr:nth-child(even) { background-color: #f9f9f9; }
+				.url { word-break: break-all; font-family: monospace; font-size: 12px; }
+				.info { background-color: #f0f8ff; padding: 10px; border-left: 4px solid #7224d8; margin: 20px 0; }
+			</style>
+		</head>
+		<body>
+			<h1>🧭 WebArchive Export</h1>
+			<div class="info">Export généré le ${new Date().toLocaleString()}</div>
+		`;
+
+		// Main resource
+		if (webArchiveJSON.WebMainResource) {
+			const mainData = unwebarchiver.getFormattedData(webArchiveJSON.WebMainResource);
+			htmlContent += `
+				<h2>Ressource principale</h2>
+				<table>
+					<tr><th>Propriété</th><th>Valeur</th></tr>
+					<tr><td>URL</td><td class="url">${webArchiveJSON.WebMainResource.WebResourceURL}</td></tr>
+					<tr><td>Domaine</td><td>${mainData.domain}</td></tr>
+					<tr><td>Fichier</td><td>${mainData.file}</td></tr>
+					<tr><td>Taille</td><td>${mainData.size}</td></tr>
+					<tr><td>Type MIME</td><td>${mainData.kind}</td></tr>
+				</table>
+			`;
+		}
+
+		// Sub resources table
+		if (webArchiveJSON.WebSubresources && webArchiveJSON.WebSubresources.length > 0) {
+			htmlContent += `
+				<h2>Sous-ressources (${webArchiveJSON.WebSubresources.length})</h2>
+				<table>
+					<thead>
+						<tr>
+							<th>Domaine</th>
+							<th>Fichier</th>
+							<th>Taille</th>
+							<th>Type MIME</th>
+							<th>URL</th>
+						</tr>
+					</thead>
+					<tbody>
+			`;
+			
+			webArchiveJSON.WebSubresources.forEach(resource => {
+				const data = unwebarchiver.getFormattedData(resource);
+				htmlContent += `
+					<tr>
+						<td>${data.domain}</td>
+						<td>${data.file}</td>
+						<td>${data.size}</td>
+						<td>${data.kind}</td>
+						<td class="url">${resource.WebResourceURL}</td>
+					</tr>
+				`;
+			});
+			
+			htmlContent += `
+					</tbody>
+				</table>
+			`;
+		}
+
+		htmlContent += `
+		</body>
+		</html>
+		`;
+
+		// Create PDF using browser's print function
+		const printWindow = window.open('', '_blank');
+		printWindow.document.write(htmlContent);
+		printWindow.document.close();
+		
+		printWindow.onload = function() {
+			printWindow.print();
+			// Note: L'utilisateur devra choisir "Enregistrer au format PDF" dans les options d'impression
+		};
 	}
 };
 
